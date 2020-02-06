@@ -3,7 +3,8 @@ package main
 import (
 	"database/sql/driver"
 	"fmt"
-	"github.com/lib/pq"
+	"github.com/jmoiron/sqlx"
+	_ "github.com/lib/pq"
 	"log"
 	"net"
 	"net/http"
@@ -12,13 +13,14 @@ import (
 func main() {
 	http.HandleFunc("/", info)
 	http.HandleFunc("/post/create", post)
+	http.HandleFunc("/post/show", show)
 
-	port := ":8080"
+	port := ":8082"
 	log.Printf("start work on %s", port)
 	log.Fatal(http.ListenAndServe(port, nil))
 }
 
-func info(writer http.ResponseWriter, request *http.Request) {
+func info(writer http.ResponseWriter, _ *http.Request) {
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		writer.Write([]byte(err.Error()))
@@ -31,10 +33,13 @@ func info(writer http.ResponseWriter, request *http.Request) {
 		if iface.Flags&net.FlagLoopback != 0 {
 			continue // loopback interface
 		}
+
 		addrs, err := iface.Addrs()
 		if err != nil {
-			writer.Write([]byte(err.Error()))
+			response(writer, err.Error())
+			return
 		}
+
 		for _, addr := range addrs {
 			var ip net.IP
 			switch v := addr.(type) {
@@ -51,35 +56,76 @@ func info(writer http.ResponseWriter, request *http.Request) {
 				continue // not an ipv4 address
 			}
 
-			writer.Write([]byte("your ip is: " + ip.String()))
+			response(writer, "your ip is: "+ip.String())
 			return
 		}
 	}
 
-	writer.Write([]byte("are you connected to the network?"))
+	response(writer, "are you connected to the network?")
 }
 
-func post(writer http.ResponseWriter, request *http.Request) {
-	host := "localhost"
+func post(writer http.ResponseWriter, _ *http.Request) {
+	db, err := connect()
+	if err != nil {
+		response(writer, err.Error())
+		return
+	}
+
+	st, err := db.Prepare("INSERT INTO person (name) VALUES (md5(random()::text))")
+	if err != nil {
+		response(writer, err.Error())
+		return
+	}
+
+	st.Exec([]driver.Value{})
+}
+
+func show(writer http.ResponseWriter, _ *http.Request) {
+	db, err := connect()
+	if err != nil {
+		response(writer, err.Error())
+		return
+	}
+
+	st, err := db.Prepare("Select * from person")
+	if err != nil {
+		response(writer, err.Error())
+		return
+	}
+
+	res, err := st.Query()
+	if err != nil {
+		response(writer, err.Error())
+		return
+	}
+
+	var data string
+	for res.Next() {
+		var Id int
+		var Name string
+
+		if err = res.Scan(&Id, &Name); err != nil {
+			response(writer, err.Error())
+			return
+		}
+
+		data += fmt.Sprintf("ID: %d, Name: %s \n", Id, Name)
+	}
+
+	response(writer, data)
+}
+
+func connect() (*sqlx.DB, error) {
+	host := "host"
 	port := "5432"
 	user := "postgres"
 	dbname := "postgres"
-	password := "yourPassword"
+	password := "1234567890"
 
 	dns := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
 		host, port, user, password, dbname)
 
-	db, err := pq.Open(dns)
-	if err != nil {
-		response(writer, err.Error())
-	}
-
-	st, er := db.Prepare("INSERT INTO person (id, name) VALUES (1, md5(random()::text))")
-	if er != nil {
-		response(writer, er.Error())
-	}
-
-	st.Exec([]driver.Value{})
+	return sqlx.Open("postgres", dns)
 }
 
 func response(writer http.ResponseWriter, resp string) {
