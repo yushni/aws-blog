@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql/driver"
 	"fmt"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
@@ -15,7 +14,7 @@ func main() {
 	http.HandleFunc("/post/create", post)
 	http.HandleFunc("/post/show", show)
 
-	port := ":8082"
+	port := ":8081"
 	log.Printf("start work on %s", port)
 	log.Fatal(http.ListenAndServe(port, nil))
 }
@@ -77,7 +76,12 @@ func post(writer http.ResponseWriter, _ *http.Request) {
 		return
 	}
 
-	st.Exec([]driver.Value{})
+	_, err = st.Exec()
+	if err != nil {
+		response(writer, err.Error())
+	}
+
+	response(writer, "success")
 }
 
 func show(writer http.ResponseWriter, _ *http.Request) {
@@ -116,7 +120,7 @@ func show(writer http.ResponseWriter, _ *http.Request) {
 }
 
 func connect() (*sqlx.DB, error) {
-	host := "host"
+	host := "rds-test.cnhtbv3maxil.eu-central-1.rds.amazonaws.com"
 	port := "5432"
 	user := "postgres"
 	dbname := "postgres"
