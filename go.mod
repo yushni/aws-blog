@@ -1,4 +1,4 @@
-module test
+module github.com/yushni/aws-blog
 
 go 1.13
 
